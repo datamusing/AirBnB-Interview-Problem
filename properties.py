@@ -4,15 +4,30 @@
 
 Here's a description of how my code works:
 
-1. Parses input. (This is strightforward.) Generates dictionaries that allow us to look up properties, dates, and searches in constant time later on.
+1. Parses input. (This is strightforward.) Generates dictionaries that allow us
+to look up properties, dates, and searches in constant time later on.
 
-2. Performs the spatial searches. 
+2. Performs the searches. We sort the properties by latitude and longitude so
+for each search, we can do a binary search over these lists efficiently.
    
 3. For each search, look through the list of search results. For each result,
 check the availability data for each night that the guest wants to stay. If all
 nights are available, total up the cost.
 
 4. Sort the results for each search by cost. Print the best ten.
+
+
+NOTE: This wasn't working by the deadline. I got it to pass 2/4 tests shortly
+after the deadline, but I realized later that I was handling the search wrong. I
+was searching within a 1.0 degree radius of the search coordinates, instead of
+using a bounding box. Fixing this required a non-trivial change to my
+implementation, which I made the next day after submitting.
+
+It still only passes 2/4 tests. I don't know why -- it's hard to debug without
+some sample data :/ For what it's worth, what I lack in correctness I hope I can
+make up in code clarity, efficiency, and conciseness. My solution is efficient
+and it's less than 100 lines of code (not counting whitespace and comments).
+
 """
 
 
@@ -75,6 +90,13 @@ def parse_input():
 def perform_searches(properties, searches):
     """ Returns a dictionary mapping every search_id to a list of results within
     a bounding box with lat and lng +/- 1.0 from the search coordinates.
+    
+    We sort the properties by latitude and longitude so we can do a binary
+    search over them efficiently. Sorting them is O(n log n), and then
+    subsequent searches are O(log n), where n is the number of properties. Since
+    we search these lists k times, where k is the number of total searches, the
+    big-O for this function is O(n log n + k log n). We use the bisect module
+    for binary search.
     
     NOTE: In earlier submissions, I was searching for properties within a radius
     of 1.0 degrees, instead of a bounding box. This made for a very different
