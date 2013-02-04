@@ -4,34 +4,15 @@
 
 Here's a description of how my code works:
 
-1. Parses input. (This is strightforward.) Generates dictionaries that map
-property_id and search_id to their searches for easy lookup.
+1. Parses input. (This is strightforward.) Generates dictionaries that allow us to look up properties, dates, and searches in constant time later on.
 
-2. Performs the spatial searches. I used the KDTree implementation in the scipy
-library for this. The method KDTree.query_ball_tree takes another tree as a
-parameter, and for each point in the calling tree, it generates a list of
-neighbors within a given radius in the other tree.
-
-I hold that using KDTrees is a good approach. Quoth wikipedia: "In computer
-science, a k-d tree (short for k-dimensional tree) is a space-partitioning data
-structure for organizing points in a k-dimensional space. k-d trees are a useful
-data structure for several applications, such as searches involving a
-multidimensional search key (e.g. range searches and nearest neighbor
-searches)." The scipy documentation also says that their KDTree implementation
-"use[s] a reasonably efficient algorithm" for this kind of search.
+2. Performs the spatial searches. 
    
-3. Generate a map of (property_id, date) tuples to any "date" objects with data
-on the availability for that night. This is so we have fast lookup later.
-
-4. For each search, look through the list of search results. For each result,
+3. For each search, look through the list of search results. For each result,
 check the availability data for each night that the guest wants to stay. If all
 nights are available, total up the cost.
 
-5. Sort the results for each search by cost. Print the best ten.
-
-I don't know what the big-O runtime complexity of this all is. It's going to
-depend on the KDTree's implementation, and the scipy docs don't give the big-O
-complexity. (But it's probably good enough.)
+4. Sort the results for each search by cost. Print the best ten.
 """
 
 
