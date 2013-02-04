@@ -37,15 +37,17 @@ complexity. (But it's probably good enough.)
 
 import sys
 import csv
-import scipy.spatial
+import operator
 import datetime
+import bisect
 
 def parse_input():
-    """ Returns a tuple of 3 elements where the first is a dictionary of
-    properties (with their id as the key), the second is a list of dates, and
-    the third is a dictionary of searches (with their id as the key) """
+    """ Returns 3 dictionaries. The first has property_id as the key and the
+    property data as the value. The second has a tuple (property_id, date) as
+    the key and the availability information for that property on that night as
+    the value. The third has a search_id as the key and the search data as the
+    value. """
     properties_lines, dates_lines, searches_lines = [], [], []
-    
     lines = sys.stdin.readlines()
     cur_list = None
     for line in lines:
@@ -64,50 +66,79 @@ def parse_input():
     date_reader = csv.DictReader(dates_lines, fieldnames=["property_id", "date", "availability", "price"])
     search_reader = csv.DictReader(searches_lines, fieldnames=["search_id", "lat", "lng", "checkin", "checkout"])
     
-    properties = {prop["property_id"]: prop for prop in property_reader}
-    dates = list(date_reader)
-    searches = {search["search_id"]: search for search in search_reader}
+    properties = {}
+    for prop_dict in property_reader:
+        prop_dict["lat"] = float(prop_dict["lat"])
+        prop_dict["lng"] = float(prop_dict["lng"])
+        prop_dict["nightly_price"] = int(prop_dict["nightly_price"])
+        properties[prop_dict["property_id"]] = prop_dict
+        
+    dates = {}
+    for date_dict in date_reader:
+        date_dict["date"] = datetime.datetime.strptime(date_dict["date"], "%Y-%m-%d")
+        date_dict["price"] = int(date_dict["price"])
+        date_dict["availability"] = int(date_dict["availability"])
+        dates[(date_dict["property_id"], date_dict["date"])] = date_dict
+        
+    searches = {}
+    for search_dict in search_reader:
+        search_dict["lat"] = float(search_dict["lat"])
+        search_dict["lng"] = float(search_dict["lng"])
+        search_dict["checkin"] = datetime.datetime.strptime(search_dict["checkin"], "%Y-%m-%d")
+        search_dict["checkout"] = datetime.datetime.strptime(search_dict["checkout"], "%Y-%m-%d")
+        searches[search_dict["search_id"]] = search_dict
     
     return properties, dates, searches
 
 
 def perform_searches(properties, searches):
     """ Returns a dictionary mapping every search_id to a list of results within
-    1.0 degree lat/lng. """
+    a bounding box with lat and lng +/- 1.0 from the search coordinates.
     
-    # Generate KDTree of property locations
-    locs = [(float(prop["lat"]), float(prop["lng"])) for prop in properties.values()]
-    loc_tree = scipy.spatial.KDTree(locs)
+    NOTE: In earlier submissions, I was searching for properties within a radius
+    of 1.0 degrees, instead of a bounding box. This made for a very different
+    approach (using KD trees). Upon re-reading the problem, it became clear that
+    this wasn't what you were looking for, but searching in a radius rather than
+    a bounding box seems like a more intuitive way to handle spatial
+    coordinates. It also wound up being fewer lines of code. Just something to
+    think about... """
     
-    # Generate KDTree of search locations
-    search_locs = [(float(search["lat"]), float(search["lng"])) for search in searches.values()]
-    search_loc_tree = scipy.spatial.KDTree(search_locs)
+    sorted_by_lat = sorted(properties.values(), key=operator.itemgetter("lat"))
+    sorted_by_lng = sorted(properties.values(), key=operator.itemgetter("lng"))
+    lats = [prop["lat"] for prop in sorted_by_lat]
+    lngs = [prop["lng"] for prop in sorted_by_lng]
     
-    # Find locations within radius of 1.0 from the search.
-    raw_results = search_loc_tree.query_ball_tree(loc_tree, 1.0)
-    
-    # Create and return a dictionary of search_id mapped to its search results
     results = {}
-    for search_idx, prop_idx_list in enumerate(raw_results):
-        results[searches.values()[search_idx]["search_id"]] = [properties.values()[prop_idx] for prop_idx in prop_idx_list]
+    for search in searches.values():
+        lo = bisect.bisect_left(lats, search["lat"] - 1.0)
+        hi = bisect.bisect_right(lats, search["lat"] + 1.0)
+        prop_ids_in_lat_range = set([prop["property_id"] for prop in sorted_by_lat[lo:hi]])
+        
+        lo = bisect.bisect_left(lngs, search["lng"] - 1.0)
+        hi = bisect.bisect_right(lngs, search["lng"] + 1.0)
+        prop_ids_in_lng_range = set([prop["property_id"] for prop in sorted_by_lng[lo:hi]])
+        
+        prop_ids = prop_ids_in_lat_range.intersection(prop_ids_in_lng_range)
+        results[search["search_id"]] = [properties[prop_id] for prop_id in prop_ids]
+        
     return results
 
 
-def get_total_cost(prop, availability_map, checkin, checkout):
+def get_total_cost(prop, dates, checkin, checkout):
     one_day = datetime.timedelta(days=1)
-    dates = [checkin + one_day * night for night in range((checkout - checkin).days)]
+    nights = [checkin + one_day * i for i in range((checkout - checkin).days)]
     
     cost = 0
-    for date in dates:
-        key = (prop["property_id"], date)
-        if key not in availability_map:
-            cost += int(prop["nightly_price"])
+    for night in nights:
+        key = (prop["property_id"], night)
+        if key not in dates:
+            cost += prop["nightly_price"]
         else:
-            availability = availability_map[key]
-            if availability["availability"] == "0":
+            date = dates[key]
+            if date["availability"] == 0:
                 return None
             else:
-                cost += int(availability["price"])
+                cost += date["price"]
     return cost
 
 
@@ -115,29 +146,19 @@ def main():
     properties, dates, searches = parse_input()
     
     search_results = perform_searches(properties, searches)
-    
-    # Create a dictionary with key (property_id, datetime) and the date object as the value
-    availability_map = {}
-    for date in dates:
-        property_and_date = (date["property_id"], datetime.datetime.strptime(date["date"], "%Y-%m-%d"))
-        availability_map[property_and_date] = date
         
     for search_id, results in search_results.items():
         # Find total prices for each property
         search = searches[search_id]
         properties_and_costs = []  # List of tuples (property_id, cost)
         for prop in results:
-            checkin = datetime.datetime.strptime(search["checkin"], "%Y-%m-%d")
-            checkout = datetime.datetime.strptime(search["checkout"], "%Y-%m-%d")
-            cost = get_total_cost(prop, availability_map, checkin, checkout)
-            
+            cost = get_total_cost(prop, dates, search["checkin"], search["checkout"])
             if cost is not None:
                 properties_and_costs.append((prop, cost))
         
-        sorted_results = sorted(properties_and_costs, key=lambda k: k[1])[0:10]
-        for idx, final_result in enumerate(sorted_results):
-            prop = final_result[0]
-            cost = final_result[1]
+        sorted_results = sorted(properties_and_costs, key=lambda k: k[1])
+        for idx, final_result in enumerate(sorted_results[:10]):
+            prop, cost = final_result
             print(",".join([search_id, str(idx + 1), prop["property_id"], str(cost)]))
             
 
