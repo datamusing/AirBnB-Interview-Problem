@@ -28,9 +28,8 @@ def parse_input():
             cur_list = dates_lines
         elif line == "Searches":
             cur_list = searches_lines
-        else:
-            if cur_list is not None:
-                cur_list.append(line)
+        elif cur_list is not None:
+            cur_list.append(line)
     
     property_reader = csv.DictReader(properties_lines, fieldnames=["property_id", "lat", "lng", "nightly_price"])
     date_reader = csv.DictReader(dates_lines, fieldnames=["property_id", "date", "availability", "price"])
